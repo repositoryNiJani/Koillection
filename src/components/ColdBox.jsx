@@ -1,5 +1,5 @@
 import { KoiPattern, SpriteIcon } from './FishCard.jsx';
-import { formatHatchChance, koiVariety, KOI_RARITY_TIERS, KOI_VARIETIES, LARGE } from '../game/fish.js';
+import { comboChance, effectiveTier, formatHatchChance, koiScale, koiVariety, KOI_RARITY_TIERS, KOI_SCALES, KOI_VARIETIES, LARGE } from '../game/fish.js';
 
 const fmtDate = (ts) => new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 
@@ -16,9 +16,9 @@ export default function ColdBox({ trophies, graveyard }) {
           <ul className="trophy-grid">
             {trophies.map((t) => (
               <li key={t.id} className="trophy">
-                <span className="trophy-art"><SpriteIcon stage={LARGE} varietyId={t.varietyId} scale={4} /></span>
+                <span className="trophy-art"><SpriteIcon stage={LARGE} varietyId={t.varietyId} scaleId={t.scaleId} scale={4} /></span>
                 <b className="variety-label">
-                  {koiVariety(t.varietyId).type} - {t.name} - {formatHatchChance(koiVariety(t.varietyId).hatchChance)} hatch chance
+                  {koiVariety(t.varietyId).type}, {koiScale(t.scaleId).name}, <span className={`tier-label tier-${effectiveTier(t).id}`}>{effectiveTier(t).name}</span> - {t.name} - {formatHatchChance(comboChance(t))} hatch chance
                 </b>
                 <span className="soft tiny variety-colors">
                   <KoiPattern varietyId={t.varietyId} />
@@ -36,8 +36,8 @@ export default function ColdBox({ trophies, graveyard }) {
       <section className="tile tile-water rarity-guide">
         <h2>Koi rarity guide</h2>
         <p className="soft rarity-guide-intro">
-          Common color patterns hatch most often. Higher rarity tiers have sharply lower odds. Each variety below
-          shows its individual chance within its tier.
+          The color pattern sets a koi's starting tier. Its scales can raise that tier; Gin Rin raises it by one step,
+          up to Divine. Each variety below shows its individual chance within its color tier.
         </p>
         <ul className="rarity-grid">
           {KOI_RARITY_TIERS.map((tier) => {
@@ -69,6 +69,21 @@ export default function ColdBox({ trophies, graveyard }) {
               </li>
             );
           })}
+        </ul>
+        <h3 className="scales-heading">Scales</h3>
+        <ul className="rarity-grid">
+          {KOI_SCALES.map((scale) => (
+            <li key={scale.id} className="rarity-tier">
+              <div className="rarity-tier-head">
+                <b>{scale.name}</b>
+                <span>{scale.chance}% chance</span>
+              </div>
+              <p>{scale.description}</p>
+              <p className="rarity-available">
+                Tier bonus: {scale.tierBonus ? `+${scale.tierBonus}` : 'None'}
+              </p>
+            </li>
+          ))}
         </ul>
       </section>
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { formatHatchChance, koiVariety, KOI_VARIETIES } from '../game/fish.js';
+import { formatHatchChance, koiScale, koiVariety, KOI_VARIETIES } from '../game/fish.js';
 
 export default function Trade({ state, open, onClose }) {
   const dialogRef = useRef(null);
@@ -45,7 +45,9 @@ export default function Trade({ state, open, onClose }) {
 
     const give = offerType === 'food'
       ? `${offeredAmount} food`
-      : `${koiVariety(offeredFish.varietyId).type} koi, ${offeredFish.name}`;
+      : offeredFish.stage === 0
+        ? `??? koi, ${offeredFish.name}`
+        : `${koiVariety(offeredFish.varietyId).type} (${koiScale(offeredFish.scaleId).name}) koi, ${offeredFish.name}`;
     const receive = requestType === 'food'
       ? `${requestedAmount} food`
       : requestVariety === 'any'
@@ -143,7 +145,9 @@ export default function Trade({ state, open, onClose }) {
                     {state.fish.length === 0 && <option value="">No koi available</option>}
                     {state.fish.map((fish) => (
                       <option key={fish.id} value={String(fish.id)}>
-                        {fish.name} — {koiVariety(fish.varietyId).type}
+                        {fish.name} — {fish.stage === 0
+                          ? '???'
+                          : `${koiVariety(fish.varietyId).type} (${koiScale(fish.scaleId).name})`}
                       </option>
                     ))}
                   </select>

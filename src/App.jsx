@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Pond from './components/Pond.jsx';
 import { Roster, FishDetail, SpriteIcon } from './components/FishCard.jsx';
-import { FoodTile, TriesTile, GithubTile, ColdBoxTile, Onboarding } from './components/Tiles.jsx';
+import { FoodTile, TriesTile, GithubTile, ColdBoxTile } from './components/Tiles.jsx';
 import Challenge from './components/Challenge.jsx';
 import ColdBox from './components/ColdBox.jsx';
 import Settings from './components/Settings.jsx';
@@ -15,8 +15,6 @@ import {
 import { loadGithub, putFile, buildCommit } from './game/github.js';
 import { fmtDuration, DAY_MS } from './game/time.js';
 
-const ONBOARD_KEY = 'sqlfish.onboarded.v1';
-
 export default function App() {
   const [state, setState] = useState(loadState);
   const [gh, setGh] = useState(loadGithub);
@@ -25,10 +23,6 @@ export default function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [toast, setToast] = useState(null);
   const [now, setNow] = useState(Date.now());
-  const [onboarded, setOnboarded] = useState(() => {
-    try { return localStorage.getItem(ONBOARD_KEY) === '1'; } catch { return true; }
-  });
-
   const stateRef = useRef(state);
   stateRef.current = state;
   const ghRef = useRef(gh);
@@ -107,10 +101,7 @@ export default function App() {
     setState(next);
 
     if (correct) {
-      // jump straight to the fish that needs food most, so feeding is one click
-      const hungriest = next.fish.slice().sort((a, b) => a.lastFed - b.lastFed)[0];
-      if (hungriest) setSelectedId(hungriest.id);
-      notify({ type: 'good', message: `Correct! +1 food. ${hungriest ? `${hungriest.name} is ready to eat.` : ''}` });
+      notify({ type: 'good', message: 'Correct! You earned 1 food.' });
       if (ghRef.current) setTimeout(flushCommits, 0);
     } else {
       notify({ type: 'error', message: 'Not quite. This question is still waiting for you.' });
@@ -128,11 +119,6 @@ export default function App() {
   const retire = (fn) => (id) => {
     act(fn, id);
     setSelectedId(null);
-  };
-
-  const dismissOnboarding = () => {
-    setOnboarded(true);
-    try { localStorage.setItem(ONBOARD_KEY, '1'); } catch { /* ignore */ }
   };
 
   const food = foodAvailable(state);
@@ -156,7 +142,7 @@ export default function App() {
           <h1>Koillection</h1>
         </div>
         <nav className="seg" aria-label="Sections">
-          {[['play', 'Play'], ['trade', 'Trade'], ['cold', `Cold box${trophyBadge}`], ['settings', 'Settings']].map(([id, label]) => (
+          {[['play', 'Pond'], ['trade', 'Trade'], ['cold', `Cold box${trophyBadge}`], ['settings', 'Settings']].map(([id, label]) => (
             <button
               key={id}
               className={`seg-btn ${(id === 'trade' ? tradeOpen : tab === id) ? 'on' : ''}`}
@@ -178,51 +164,51 @@ export default function App() {
       )}
 
       {tab === 'play' && (
-        <main className="bento">
-          {!onboarded && <Onboarding onDismiss={dismissOnboarding} />}
-
-          <div className="col-main">
-            <section className="tile tile-water pond-tile">
-              <div className="tile-head">
-                <h2>Your pond</h2>
-                <span className="count">{state.fish.length} of {MAX_FISH} fish</span>
-              </div>
-              <Pond fish={state.fish} selectedId={selectedId} onSelect={setSelectedId} />
-              <Challenge state={state} onResult={handleResult} githubReady={Boolean(gh)} />
-              {state.fish.length === 0 ? (
-                <div className="empty-pond">
-                  <p>Every fish starved. Start again with a new egg.</p>
-                  <button className="btn primary" onClick={() => act(hatchEgg)}>Hatch a new egg</button>
-                </div>
-              ) : (
-                <Roster fish={state.fish} selectedId={selectedId} now={now} onSelect={setSelectedId} />
-              )}
-            </section>
-          </div>
-
-          <div className="col-side">
-            <FoodTile food={state.food} grindFood={state.grindFood} selected={selected} alert={alert} />
-            <FishDetail
-              fish={selected}
-              now={now}
-              food={food}
-              pondFull={pondFull}
-              onFeed={(id) => act(feed, id)}
-              onGrind={retire(grind)}
-              onTrophy={retire(makeTrophy)}
-            />
-            <div className="pair">
-              <TriesTile left={triesLeft(state)} solved={state.daily.solved} />
-              <GithubTile
-                gh={gh}
-                pending={state.pendingCommits.length}
-                onConnect={() => setTab('settings')}
-                onRetry={flushCommits}
-              />
+        <main className="dashboard">
+          <section className="tile tile-water pond-tile">
+            <div className="tile-head">
+              <h2>Your pond</h2>
+              <span className="count">{state.fish.length} of {MAX_FISH} fish</span>
             </div>
+            <Pond fish={state.fish} selectedId={selectedId} onSelect={setSelectedId} />
+            {state.fish.length === 0 ? (
+              <div className="empty-pond">
+                <p>Every fish starved. Start again with a new egg.</p>
+                <button className="btn primary" onClick={() => act(hatchEgg)}>Hatch a new egg</button>
+              </div>
+            ) : (
+              <Roster fish={state.fish} selectedId={selectedId} onSelect={setSelectedId} />
+            )}
+            <Challenge state={state} onResult={handleResult} githubReady={Boolean(gh)} />
+          </section>
+
+          <aside className="dashboard-side" aria-label="Pond status">
+            <div className="quick-stats">
+              <FoodTile food={state.food} grindFood={state.grindFood} alert={alert} />
+              <TriesTile left={triesLeft(state)} />
+            </div>
+            <GithubTile
+              gh={gh}
+              pending={state.pendingCommits.length}
+              onConnect={() => setTab('settings')}
+              onRetry={flushCommits}
+            />
             <ColdBoxTile trophies={state.trophies} graveyard={state.graveyard} onOpen={() => setTab('cold')} />
-          </div>
+          </aside>
         </main>
+      )}
+
+      {selected && (
+        <FishDetail
+          fish={selected}
+          now={now}
+          food={food}
+          pondFull={pondFull}
+          onClose={() => setSelectedId(null)}
+          onFeed={(id) => act(feed, id)}
+          onGrind={retire(grind)}
+          onTrophy={retire(makeTrophy)}
+        />
       )}
 
       {tab === 'cold' && <ColdBox trophies={state.trophies} graveyard={state.graveyard} />}

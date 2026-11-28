@@ -1,6 +1,6 @@
 import { dayKey } from './time.js';
 import { levelFor } from './questions.js';
-import { ensureKoiVarieties, makeFish } from './fish.js';
+import { ensureKoiScales, ensureKoiVarieties, makeFish } from './fish.js';
 
 export const TRIES_PER_DAY = 5;
 const STATE_KEY = 'sqlfish.state.v1';
@@ -72,7 +72,7 @@ export function loadState() {
     const raw = localStorage.getItem(STATE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && parsed.version === 1) return ensureDay(ensureKoiVarieties(parsed));
+      if (parsed && parsed.version === 1) return ensureDay(ensureKoiScales(ensureKoiVarieties(parsed)));
     }
   } catch {
     /* fall through to a fresh game */

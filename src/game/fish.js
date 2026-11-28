@@ -25,6 +25,13 @@ export const KOI_RARITY_TIERS = [
   { id: 'divine', name: 'Divine', chance: 0.01, range: '0.00001%-<0.01%', combinations: 'Rare metallic palettes: platinum + gold + black; black + white.' },
 ];
 
+export const KOI_SCALES = [
+  { id: 'normal', name: 'Normal', chance: 78, tierBonus: 0, description: 'Smooth, standard scales.' },
+  { id: 'leather', name: 'Leather', chance: 10, tierBonus: 0, description: 'Soft-looking, leather-like scales.' },
+  { id: 'mirror', name: 'Mirror', chance: 8, tierBonus: 0, description: 'Large, reflective scales.' },
+  { id: 'gin-rin', name: 'Gin Rin', chance: 4, tierBonus: 1, description: 'Glittering scales that shine in the light.' },
+];
+
 const KOI_VARIETY_DEFINITIONS = [
   { id: 'kohaku', type: 'Kohaku', tierId: 'common', weight: 1, colors: [{ name: 'White', hex: '#fffaf0' }, { name: 'Red', hex: '#dc443d' }], filter: 'hue-rotate(-15deg) saturate(1.2)' },
   { id: 'taisho-sanshoku', type: 'Taisho Sanshoku', tierId: 'rare', weight: 1, colors: [{ name: 'White', hex: '#fffaf0' }, { name: 'Red', hex: '#dc443d' }, { name: 'Black', hex: '#26323d' }], filter: 'hue-rotate(-15deg) saturate(1.2)' },
@@ -71,6 +78,8 @@ export const KOI_VARIETIES = KOI_VARIETY_DEFINITIONS.map((variety) => {
 
 const KOI_BY_ID = new Map(KOI_VARIETIES.map((variety) => [variety.id, variety]));
 const KOI_WEIGHT = KOI_VARIETIES.reduce((sum, variety) => sum + variety.hatchChance, 0);
+const KOI_SCALE_BY_ID = new Map(KOI_SCALES.map((scale) => [scale.id, scale]));
+const KOI_SCALE_WEIGHT = KOI_SCALES.reduce((sum, scale) => sum + scale.chance, 0);
 
 export function formatHatchChance(chance) {
   const digits = chance >= 1 ? 2 : chance >= 0.1 ? 3 : chance >= 0.01 ? 4 : 5;
@@ -90,6 +99,30 @@ export function koiVariety(id) {
   return KOI_BY_ID.get(id) || KOI_VARIETIES[0];
 }
 
+export function chooseKoiScale(random = Math.random) {
+  let choice = random() * KOI_SCALE_WEIGHT;
+  for (const scale of KOI_SCALES) {
+    choice -= scale.chance;
+    if (choice < 0) return scale;
+  }
+  return KOI_SCALES[KOI_SCALES.length - 1];
+}
+
+export function koiScale(id) {
+  return KOI_SCALE_BY_ID.get(id) || KOI_SCALES[0];
+}
+
+export function effectiveTier(fish) {
+  const varietyTierId = koiVariety(fish.varietyId).tierId;
+  const tierIndex = KOI_RARITY_TIERS.findIndex((tier) => tier.id === varietyTierId);
+  const finalIndex = Math.min(tierIndex + koiScale(fish.scaleId).tierBonus, KOI_RARITY_TIERS.length - 1);
+  return KOI_RARITY_TIERS[finalIndex];
+}
+
+export function comboChance(fish) {
+  return koiVariety(fish.varietyId).hatchChance * koiScale(fish.scaleId).chance / 100;
+}
+
 function stableRandom(seed) {
   let hash = 2166136261;
   for (let i = 0; i < seed.length; i++) {
@@ -103,6 +136,23 @@ export function ensureKoiVarieties(state) {
     koiVariety(item.varietyId).id === item.varietyId
       ? item
       : { ...item, varietyId: chooseKoiVariety(() => stableRandom(`${state.userId || ''}:${item.id}:${item.name}:${item.bornAt || item.retiredAt || item.diedAt || 0}`)).id }
+  ));
+  return {
+    ...state,
+    fish: fillMissing(state.fish),
+    trophies: fillMissing(state.trophies),
+    graveyard: fillMissing(state.graveyard),
+  };
+}
+
+export function ensureKoiScales(state) {
+  const fillMissing = (items = []) => items.map((item) => (
+    KOI_SCALE_BY_ID.has(item.scaleId)
+      ? item
+      : {
+        ...item,
+        scaleId: chooseKoiScale(() => stableRandom(`${state.userId || ''}:${item.id}:${item.name}:${item.bornAt || item.retiredAt || item.diedAt || 0}:scale`)).id,
+      }
   ));
   return {
     ...state,
@@ -139,6 +189,7 @@ export function makeFish(state, now, stage = 0) {
     lastFed: now, // the 3-day countdown starts here
     reachedLargeAt: null,
     varietyId: chooseKoiVariety().id,
+    scaleId: chooseKoiScale().id,
   };
   state.nextFishId += 1;
   return fish;
@@ -153,6 +204,7 @@ export function foodAvailable(state) {
 }
 
 export function msUntilStarve(fish, now) {
+  if (fish.stage === 0) return Infinity;
   return STARVE_MS - (now - fish.lastFed);
 }
 
@@ -162,13 +214,14 @@ export function tick(state, now) {
   const events = [];
 
   s.fish = s.fish.filter((f) => {
-    if (now - f.lastFed >= STARVE_MS) {
+    if (f.stage > 0 && now - f.lastFed >= STARVE_MS) {
       s.graveyard.push({
         name: f.name,
         stage: f.stage,
         generation: f.generation,
         diedAt: f.lastFed + STARVE_MS,
         varietyId: f.varietyId,
+        scaleId: f.scaleId,
       });
       events.push({ type: 'died', message: `${f.name} starved. It wasn't fed for 3 days.` });
       return false;
@@ -264,6 +317,7 @@ export function makeTrophy(state, fishId, now) {
     id: fish.id,
     name: fish.name,
     varietyId: fish.varietyId,
+    scaleId: fish.scaleId,
     generation: fish.generation,
     totalMeals: fish.totalMeals,
     daysToGrow: Math.max(

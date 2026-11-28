@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  chooseKoiVariety, ensureKoiVarieties, feed, grind, makeTrophy, tick, hatchEgg, makeFish,
-  KOI_RARITY_TIERS, KOI_VARIETIES,
+  chooseKoiScale, chooseKoiVariety, effectiveTier, ensureKoiScales, ensureKoiVarieties, feed, grind, makeTrophy, tick, hatchEgg, makeFish,
+  KOI_RARITY_TIERS, KOI_SCALES, KOI_VARIETIES,
   MAX_FISH, STARVE_MS, LARGE, MEALS_TO_GROW, GRIND_FOOD,
 } from '../src/game/fish.js';
 import { DAY_MS } from '../src/game/time.js';
@@ -64,6 +64,38 @@ test('existing fish and trophies receive a stable variety when upgraded', () => 
   assert.ok(KOI_VARIETIES.some((variety) => variety.id === upgraded.trophies[0].varietyId));
   assert.equal(ensureKoiVarieties(oldState).fish[0].varietyId, upgraded.fish[0].varietyId);
   assert.equal(oldState.fish[0].varietyId, undefined);
+});
+
+test('koi scales have the expected weighted picks', () => {
+  assert.equal(KOI_SCALES.reduce((sum, scale) => sum + scale.chance, 0), 100);
+  assert.equal(chooseKoiScale(() => 0).id, KOI_SCALES[0].id);
+  assert.equal(chooseKoiScale(() => 0.999999).id, KOI_SCALES[KOI_SCALES.length - 1].id);
+});
+
+test('scale bonuses adjust the effective tier and cap at divine', () => {
+  assert.equal(effectiveTier({ varietyId: 'kohaku', scaleId: 'gin-rin' }).id, 'rare');
+  assert.equal(effectiveTier({ varietyId: 'kumonryu', scaleId: 'gin-rin' }).id, 'divine');
+  assert.equal(effectiveTier({ varietyId: 'kohaku', scaleId: 'normal' }).id, 'common');
+});
+
+test('old fish, trophies, and graveyard entries get stable scales without mutation', () => {
+  const oldState = {
+    userId: 'old-save',
+    fish: [{ id: 1, name: 'Mango', bornAt: T0 }],
+    trophies: [{ id: 2, name: 'Nori', retiredAt: T0 }],
+    graveyard: [{ id: 3, name: 'Sakura', diedAt: T0 }],
+  };
+  const before = structuredClone(oldState);
+  const upgraded = ensureKoiScales(oldState);
+  const scales = [...upgraded.fish, ...upgraded.trophies, ...upgraded.graveyard].map((item) => item.scaleId);
+
+  assert.ok(scales.every((id) => KOI_SCALES.some((scale) => scale.id === id)));
+  assert.deepEqual(
+    [...ensureKoiScales(oldState).fish, ...ensureKoiScales(oldState).trophies, ...ensureKoiScales(oldState).graveyard]
+      .map((item) => item.scaleId),
+    scales,
+  );
+  assert.deepEqual(oldState, before);
 });
 
 test('feeding grows a fish stage by stage', () => {
@@ -153,12 +185,14 @@ test('a slot freed by grinding lets another Large fish split when fed with grind
 test('trophy removes the fish into the cold box and gives no food', () => {
   const s = fullPondWithLarge();
   const id = s.fish[0].id;
+  s.fish[0].scaleId = 'gin-rin';
   const r = makeTrophy(s, id, T0 + 6 * DAY_MS);
   assert.equal(r.event.type, 'trophy');
   assert.equal(r.state.fish.length, MAX_FISH - 1);
   assert.equal(r.state.trophies.length, 1);
   assert.equal(r.state.trophies[0].name, s.fish[0].name);
   assert.equal(r.state.trophies[0].varietyId, s.fish[0].varietyId);
+  assert.equal(r.state.trophies[0].scaleId, 'gin-rin');
   assert.equal(r.state.food + r.state.grindFood, 0);
   assert.equal(makeTrophy(s, s.fish[1].id, T0).event.type, 'error');
 });
@@ -166,6 +200,7 @@ test('trophy removes the fish into the cold box and gives no food', () => {
 test('a fish dies after 3 days without food, feeding resets the timer', () => {
   let s = giveFood(freshState(), 5);
   const id = s.fish[0].id;
+  s.fish[0].scaleId = 'mirror';
 
   let t = tick(s, T0 + STARVE_MS - 1000);
   assert.equal(t.state.fish.length, 1, 'still alive just before 3 days');
@@ -177,11 +212,27 @@ test('a fish dies after 3 days without food, feeding resets the timer', () => {
   t = tick(s, T0 + 2 * DAY_MS + STARVE_MS + 1000);
   assert.equal(t.state.fish.length, 0);
   assert.equal(t.state.graveyard.length, 1);
+  assert.equal(t.state.graveyard[0].scaleId, 'mirror');
   assert.equal(t.events[0].type, 'died');
 
   const hatched = hatchEgg(t.state, T0 + 6 * DAY_MS);
   assert.equal(hatched.state.fish.length, 1);
   assert.equal(hatchEgg(hatched.state, T0).event.type, 'error');
+});
+
+test('an egg does not starve before hatching, then its starvation timer starts', () => {
+  const state = giveFood(freshState(), 1);
+  const eggId = state.fish[0].id;
+  const late = T0 + STARVE_MS * 2;
+  const unhatched = tick(state, late);
+
+  assert.equal(unhatched.state.fish.length, 1);
+  assert.equal(unhatched.state.graveyard.length, 0);
+
+  const hatched = feed(unhatched.state, eggId, late).state;
+  assert.equal(hatched.fish[0].stage, 1);
+  assert.equal(tick(hatched, late + STARVE_MS - 1).state.fish.length, 1);
+  assert.equal(tick(hatched, late + STARVE_MS).state.fish.length, 0);
 });
 
 test('leftover grind food spoils the next day and is used before earned food', () => {

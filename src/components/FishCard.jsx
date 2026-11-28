@@ -1,15 +1,16 @@
+import { useEffect, useRef } from 'react';
 import {
-  STAGES, LARGE, MEALS_TO_GROW, MAX_FISH, GRIND_FOOD, formatHatchChance, koiVariety, msUntilStarve, STARVE_MS,
+  STAGES, LARGE, MEALS_TO_GROW, GRIND_FOOD, effectiveTier, koiScale, koiVariety, msUntilStarve, STARVE_MS,
 } from '../game/fish.js';
 import { fmtDuration } from '../game/time.js';
 import { SPRITE_W, SPRITE_H } from './Pond.jsx';
 
 // One stage of the koi sprite sheet, drawn with CSS so it stays crisp.
-export function SpriteIcon({ stage, varietyId, scale = 3, className = '' }) {
+export function SpriteIcon({ stage, varietyId, scaleId, scale = 3, className = '' }) {
   const variety = koiVariety(varietyId);
   return (
     <span
-      className={`sprite ${className}`}
+      className={`sprite ${stage > 0 && scaleId === 'gin-rin' ? 'sparkle' : ''} ${className}`}
       role="img"
       aria-label={`${STAGES[stage]} koi`}
       style={{
@@ -17,7 +18,7 @@ export function SpriteIcon({ stage, varietyId, scale = 3, className = '' }) {
         height: SPRITE_H * scale,
         backgroundSize: `${SPRITE_W * 5 * scale}px ${SPRITE_H * scale}px`,
         backgroundPosition: `${-stage * SPRITE_W * scale}px 0`,
-        filter: variety.filter,
+        filter: stage === 0 ? 'none' : variety.filter,
       }}
     />
   );
@@ -42,52 +43,35 @@ export function moodOf(fish, now) {
   return { ratio, mood };
 }
 
-// The 6 pond slots. Filled slots are fish you can pick; empty slots show how much room is left.
-export function Roster({ fish, selectedId, now, onSelect }) {
-  const slots = Array.from({ length: MAX_FISH }, (_, i) => fish[i] || null);
+// A compact, keyboard-friendly way to select fish in the pond.
+export function Roster({ fish, selectedId, onSelect }) {
   return (
     <ul className="roster" aria-label="Fish in your pond">
-      {slots.map((f, i) =>
-        f ? (
-          <li key={f.id}>
-            <button
-              className={`slot ${f.id === selectedId ? 'is-selected' : ''}`}
-              aria-pressed={f.id === selectedId}
-              title={`${koiVariety(f.varietyId).type} - ${f.name} - ${formatHatchChance(koiVariety(f.varietyId).hatchChance)} hatch chance`}
-              onClick={() => onSelect(f.id === selectedId ? null : f.id)}
-            >
-              <SpriteIcon stage={f.stage} varietyId={f.varietyId} scale={2} />
-              <span className="slot-name">{f.name}</span>
-              <span className="slot-chance">
-                {formatHatchChance(koiVariety(f.varietyId).hatchChance)} chance
-              </span>
-              <span className="slot-meter" aria-hidden="true">
-                <span className={`slot-fill ${moodOf(f, now).mood}`} style={{ width: `${moodOf(f, now).ratio * 100}%` }} />
-              </span>
-            </button>
-          </li>
-        ) : (
-          <li key={`empty-${i}`}>
-            <div className="slot is-empty" aria-label="Empty slot">
-              <span className="slot-name">Empty</span>
-            </div>
-          </li>
-        ),
-      )}
+      {fish.map((f) => (
+        <li key={f.id}>
+          <button
+            className={`slot ${f.id === selectedId ? 'is-selected' : ''}`}
+            aria-pressed={f.id === selectedId}
+            title={`${f.name}, ${f.stage === 0 ? '???' : `${koiVariety(f.varietyId).type}, ${koiScale(f.scaleId).name}, ${effectiveTier(f).name}`}`}
+            onClick={() => onSelect(f.id === selectedId ? null : f.id)}
+          >
+            <SpriteIcon stage={f.stage} varietyId={f.varietyId} scaleId={f.scaleId} scale={2} />
+            <span className="slot-name">{f.name}</span>
+          </button>
+        </li>
+      ))}
     </ul>
   );
 }
 
-// Everything you can do with the fish you picked.
-export function FishDetail({ fish, now, food, pondFull, onFeed, onGrind, onTrophy }) {
-  if (!fish) {
-    return (
-      <section className="tile tile-plain detail is-empty">
-        <h2>Pick a fish</h2>
-        <p className="soft">Tap a koi in the pond, or one of the slots under it, to see how it is doing and feed it.</p>
-      </section>
-    );
-  }
+export function FishDetail({ fish, now, food, pondFull, onClose, onFeed, onGrind, onTrophy }) {
+  const dialogRef = useRef(null);
+
+  useEffect(() => {
+    if (fish && dialogRef.current && !dialogRef.current.open) dialogRef.current.showModal();
+  }, [fish]);
+
+  if (!fish) return null;
 
   const left = msUntilStarve(fish, now);
   const { ratio, mood } = moodOf(fish, now);
@@ -98,67 +82,91 @@ export function FishDetail({ fish, now, food, pondFull, onFeed, onGrind, onTroph
   const growth = grown ? 1 : fish.meals / MEALS_TO_GROW[fish.stage];
   const canRetire = grown && pondFull;
   const moodText = { ok: 'Happy', hungry: 'Getting hungry', starving: 'Starving' }[mood];
+  const revealed = fish.stage > 0;
   const variety = koiVariety(fish.varietyId);
+  const scale = koiScale(fish.scaleId);
+  const tier = effectiveTier(fish);
 
   return (
-    <section className="tile tile-plain detail">
-      <div className="detail-head">
-        <div className="detail-art">
-          <SpriteIcon stage={fish.stage} varietyId={fish.varietyId} scale={4} />
-        </div>
-        <div>
-          <h2>{fish.name}</h2>
-          <p className="variety-label">
-            {variety.type} - {fish.name} - {formatHatchChance(variety.hatchChance)} hatch chance
-          </p>
-          <p className="soft tiny variety-colors">
-            <KoiPattern varietyId={fish.varietyId} />
-            {variety.colors.map((color) => color.name).join(' + ')}
-          </p>
-          <p className="soft tiny">{STAGES[fish.stage]} koi, generation {fish.generation}</p>
-        </div>
-      </div>
-
-      <div className="meter-row">
-        <div className="meter-label">
-          <span>Growth</span>
-          <span className="soft">{growthLine}</span>
-        </div>
-        <div className="meter"><div className="meter-fill growth" style={{ width: `${growth * 100}%` }} /></div>
-      </div>
-
-      <div className="meter-row">
-        <div className="meter-label">
-          <span className={`mood ${mood}`}>{moodText}</span>
-          <span className="soft">Starves in {fmtDuration(left)}</span>
-        </div>
-        <div className="meter"><div className={`meter-fill ${mood}`} style={{ width: `${ratio * 100}%` }} /></div>
-      </div>
-
-      <button className="btn primary block" disabled={food <= 0} onClick={() => onFeed(fish.id)}>
-        Feed {fish.name}
-      </button>
-      {food <= 0 && <p className="soft tiny">No food yet. Answer a question to earn some.</p>}
-
-      {canRetire && (
-        <div className="retire">
-          <p>
-            Your pond is full, so {fish.name} can't split. Choose what happens next.
-          </p>
-          <div className="retire-grid">
-            <button className="btn peach" onClick={() => onGrind(fish.id)}>
-              Grind for {GRIND_FOOD} food
-            </button>
-            <button className="btn butter" onClick={() => onTrophy(fish.id)}>
-              Make a trophy
-            </button>
+    <dialog
+      ref={dialogRef}
+      className="fish-dialog"
+      aria-labelledby="fish-detail-title"
+      onClose={onClose}
+      onClick={(event) => {
+        if (event.target === dialogRef.current) dialogRef.current.close();
+      }}
+    >
+      <section className="tile tile-plain fish-detail-modal">
+        <div className="fish-modal-head">
+          <div className="detail-head">
+            <div className="detail-art">
+              <SpriteIcon stage={fish.stage} varietyId={fish.varietyId} scaleId={fish.scaleId} scale={4} />
+            </div>
+            <div>
+              <h2 id="fish-detail-title">{fish.name}</h2>
+              <p className="variety-label">
+                {revealed
+                  ? <>{variety.type}, {scale.name}, <span className={`tier-label tier-${tier.id}`}>{tier.name}</span></>
+                  : '???'}
+              </p>
+              <p className="soft tiny variety-colors">
+                {revealed
+                  ? <><KoiPattern varietyId={fish.varietyId} /> {variety.colors.map((color) => color.name).join(' + ')}</>
+                  : '???'}
+              </p>
+              <p className="soft tiny">{STAGES[fish.stage]} koi · generation {fish.generation}</p>
+            </div>
           </div>
-          <p className="soft tiny">
-            Grinding gives food that isn't committed to GitHub and spoils tonight. A trophy is kept in your cold box
-            forever.
-          </p>
+          <button className="btn small" type="button" onClick={() => dialogRef.current?.close()}>
+            Close
+          </button>
         </div>
-      )}
-    </section>
+
+        <div className="fish-stats">
+          <div className="fish-stat">
+            <span className="soft">Food remaining</span>
+            <b>{food}</b>
+          </div>
+          <div className="fish-stat fish-growth">
+            <div className="meter-label">
+              <span>Growth</span>
+              <span className="soft">{growthLine}</span>
+            </div>
+            <div className="meter"><div className="meter-fill growth" style={{ width: `${growth * 100}%` }} /></div>
+          </div>
+        </div>
+
+        <div className="meter-row fish-hunger">
+          <div className="meter-label">
+            <span className={`mood ${mood}`}>{moodText}</span>
+            <span className="soft">{fish.stage === 0 ? 'Safe until it hatches' : `Starves in ${fmtDuration(left)}`}</span>
+          </div>
+          <div className="meter"><div className={`meter-fill ${mood}`} style={{ width: `${ratio * 100}%` }} /></div>
+        </div>
+
+        <button className="btn primary block" disabled={food <= 0} onClick={() => onFeed(fish.id)}>
+          Feed {fish.name}
+        </button>
+        {food <= 0 && <p className="soft tiny">Answer a question to earn food.</p>}
+
+        {canRetire && (
+          <div className="retire">
+            <p>Your pond is full, so {fish.name} can't split. Choose what happens next.</p>
+            <div className="retire-grid">
+              <button className="btn peach" onClick={() => onGrind(fish.id)}>
+                Grind for {GRIND_FOOD} food
+              </button>
+              <button className="btn butter" onClick={() => onTrophy(fish.id)}>
+                Make a trophy
+              </button>
+            </div>
+            <p className="soft tiny">
+              Grinding gives food that spoils tonight. A trophy stays in your cold box.
+            </p>
+          </div>
+        )}
+      </section>
+    </dialog>
   );
 }

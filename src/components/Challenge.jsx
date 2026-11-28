@@ -97,7 +97,7 @@ export default function Challenge({ state, onResult, githubReady }) {
   return (
     <>
       <button className="btn primary ready-button" onClick={() => dialogRef.current?.showModal()}>
-        Ready
+        Answer today's question
       </button>
       <dialog
         ref={dialogRef}

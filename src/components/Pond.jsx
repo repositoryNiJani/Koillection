@@ -77,7 +77,7 @@ export default function Pond({ fish, selectedId, onSelect }) {
         const grey = left < 0.34 ? 0.85 : left < 0.67 ? 0.35 : 0;
         ctx.save();
         if ('filter' in ctx) {
-          const tint = koiVariety(f.varietyId).filter;
+          const tint = f.stage === 0 ? '' : koiVariety(f.varietyId).filter;
           ctx.filter = `${tint} ${grey > 0 ? `grayscale(${grey})` : ''}`.trim();
         }
         if (sprites.complete && sprites.naturalWidth) {
@@ -90,6 +90,17 @@ export default function Pond({ fish, selectedId, onSelect }) {
           }
         }
         ctx.restore();
+
+        if (f.stage > 0 && f.scaleId === 'gin-rin') {
+          const sparkles = [[4, 4], [10, 2], [17, 7], [8, 12]];
+          for (let i = 0; i < sparkles.length; i++) {
+            const opacity = reduceMotion ? 1 : 0.35 + (Math.sin(t * 5 + f.id + i * 1.7) + 1) * 0.325;
+            ctx.globalAlpha = opacity;
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(px + sparkles[i][0], py + sparkles[i][1], 1, 1);
+          }
+          ctx.globalAlpha = 1;
+        }
 
         if (f.id === sel) {
           // little gold arrow above the selected fish
